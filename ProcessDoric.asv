@@ -95,8 +95,8 @@ for sesh_num = 1:numel(opt.sessions)
     
     %% get rid of some leading and ending nans
     for roiIdx = 1:opt.numROI
-        iso{roiIdx} = clean_nans(iso{roiIdx});
-        F{roiIdx} = clean_nans(F{roiIdx});
+        iso{roiIdx} = clean_nans(iso{roiIdx},iso_orig{roiIdx}(1),iso_orig{roiIdx}(end));
+        F{roiIdx} = clean_nans(F{roiIdx},F_orig{roiIdx}(1),F_orig{roiIdx}(end));
     end
     
     %% smooth signals    
@@ -115,6 +115,7 @@ for sesh_num = 1:numel(opt.sessions)
         pred = iso{roiIdx} * beta(1) + beta(2);
         F_subtr{roiIdx} = F{roiIdx} - pred;
     end
+    keyboard
     
     %% Save processed data
     
@@ -144,7 +145,7 @@ for i = sub_idx
     f0(i) = prctile(y(idx_this),prct);
 end
 f0 = interp1(sub_idx,f0(sub_idx),1:numel(y))';
-f0 = clean_nans(f0);
+f0 = clean_nans(f0,f0(1),f0(max(sub_idx)));
 
 end
 
@@ -173,7 +174,7 @@ F = (y-f0)./f0;
 
 end
 
-function F_clean = clean_nans(F)
+function F_clean = clean_nans(F,F1,Fend)
 % clean leading and ending nans
 
 % num leading nans
