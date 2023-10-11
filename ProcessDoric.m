@@ -9,11 +9,24 @@
 paths = struct;
 paths.doric_data = 'D:\Doric\';
 paths.save_data = 'D:\Doric\processed\';
-
+ 
 opt = struct;
 opt.sessions = {...
-    'MC99_20230316_WaterDelivery_MultipleSizes',...
+    'MC104_20231011_OdorLaser_FreeWater',...
+    'MC105_20231011_OdorLaser_FreeWater',...
+    'MC106_20231011_OdorLaser_FreeWater',...
+    'MC107_20231011_OdorLaser_FreeWater',...
+    'MC108_20231011_OdorLaser_FreeWater',...
+    'MC111_20231011_OdorLaser_FreeWater',...
+    'MC112_20231011_OdorLaser_FreeWater',...
+    'MC113_20231011_OdorLaser_FreeWater',...
+    'MC114_20231011_OdorLaser_FreeWater',...
+    'MC115_20231011_OdorLaser_FreeWater',...
+    'MC116_20231011_OdorLaser_FreeWater',...
+    'MC117_20231011_OdorLaser_FreeWater',...
+    'MC118_20231011_OdorLaser_FreeWater',...
 };
+
 opt.iti_offset = 5; % seconds past sync pulse onset to exclude from iti period
 opt.smooth_signals = true; % if true, smooths before subtracting isosbestic
 opt.smooth_sigma = 50; % in ms (only used if opt.smooth_signals = true);
@@ -73,9 +86,16 @@ for sesh_num = 1:numel(opt.sessions)
     end
     
     %% remove outliers
+    % using percentiles:
+%     for roiIdx = 1:opt.numROI
+%         iso_orig{roiIdx} = remove_outliers_pct(iso_orig{roiIdx},0.01,99.99);
+%         F_orig{roiIdx} = remove_outliers_pct(F_orig{roiIdx},0.01,99.99);
+%     end
+    
+    % using zscore:
     for roiIdx = 1:opt.numROI
-        iso_orig{roiIdx} = remove_outliers(iso_orig{roiIdx},0.01,99.99);
-        F_orig{roiIdx} = remove_outliers(F_orig{roiIdx},0.01,99.99);
+        iso_orig{roiIdx} = remove_outliers_z(iso_orig{roiIdx},-10,10);
+        F_orig{roiIdx} = remove_outliers_z(F_orig{roiIdx},-10,10);
     end
     
     %% interpolate to same time scale
@@ -111,10 +131,25 @@ for sesh_num = 1:numel(opt.sessions)
     iti_per = get_ITI_period(t,synct,opt.iti_offset);
     F_subtr = cell(opt.numROI,1);
     for roiIdx = 1:opt.numROI
-        beta = polyfit(iso{roiIdx}(iti_per),F{roiIdx}(iti_per),1);
-        pred = iso{roiIdx} * beta(1) + beta(2);
+%         beta = polyfit(iso{roiIdx}(iti_per),F{roiIdx}(iti_per),1);
+%         pred = iso{roiIdx} * beta(1) + beta(2);
+        beta = robustfit(iso{roiIdx}(iti_per),F{roiIdx}(iti_per));
+        pred = iso{roiIdx} * beta(2) + beta(1);
         F_subtr{roiIdx} = F{roiIdx} - pred;
+        
+        figure('Position',[200 200 500 250]);
+        subplot(1,2,1);
+        plot(iso{roiIdx},F{roiIdx},'Color',[0 0 0 0.1]);
+        xlabel('iso'); ylabel('sig');
+        title('iso versus sig (dF/F)');
+        subplot(1,2,2);
+        plot(iso{roiIdx},F_subtr{roiIdx},'Color',[0 0 0 0.1]);
+        title('iso versus sig subtr (dF/F)');
+        xlabel('iso'); ylabel('sig (subtr)');
+        sgtitle(session,'Interpreter','none');
+        drawnow;
     end
+
     
     %% Save processed data
     
@@ -192,11 +227,23 @@ F_clean(end-num_ending_nans+1:end) = F(end-num_ending_nans);
 
 end
 
-function y_new = remove_outliers(y,p_low,p_high)
+function y_new = remove_outliers_pct(y,p_low,p_high)
 % removes outliers using percentiles p_low and p_high
 
 thresh_low = prctile(y,p_low);
 thresh_high = prctile(y,p_high);
+x = 1:numel(y);
+keep = y>thresh_low & y<thresh_high;
+y_new = interp1(x(keep),y(keep),x);
+
+end
+
+function y_new = remove_outliers_z(y,z_low,z_high)
+% removes outliers using percentiles p_low and p_high
+
+y = zscore(y);
+thresh_low = z_low;
+thresh_high = z_high;
 x = 1:numel(y);
 keep = y>thresh_low & y<thresh_high;
 y_new = interp1(x(keep),y(keep),x);
