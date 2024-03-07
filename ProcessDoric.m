@@ -9,22 +9,20 @@
 paths = struct;
 paths.doric_data = 'D:\Doric\';
 paths.save_data = 'D:\Doric\processed\';
+paths.libmc = 'C:\code\libmc\';
+addpath(genpath(paths.libmc));
  
 opt = struct;
+% opt.sessions = {...
+%     'MC130_20240213_StimPatterns_FreeWater_withMaskingLight',...
+%     'MC131_20240213_StimPatterns_FreeWater_withMaskingLight',...
+%     'MC132_20240213_StimPatterns_FreeWater_withMaskingLight',...
+% };
 opt.sessions = {...
-    'MC104_20231011_OdorLaser_FreeWater',...
-    'MC105_20231011_OdorLaser_FreeWater',...
-    'MC106_20231011_OdorLaser_FreeWater',...
-    'MC107_20231011_OdorLaser_FreeWater',...
-    'MC108_20231011_OdorLaser_FreeWater',...
-    'MC111_20231011_OdorLaser_FreeWater',...
-    'MC112_20231011_OdorLaser_FreeWater',...
-    'MC113_20231011_OdorLaser_FreeWater',...
-    'MC114_20231011_OdorLaser_FreeWater',...
-    'MC115_20231011_OdorLaser_FreeWater',...
-    'MC116_20231011_OdorLaser_FreeWater',...
-    'MC117_20231011_OdorLaser_FreeWater',...
-    'MC118_20231011_OdorLaser_FreeWater',...
+    'MC120_20240303_OdorLaser_FreeWater',...
+    'MC121_20240303_OdorLaser_FreeWater',...
+    'MC122_20240303_OdorLaser_FreeWater',...
+    'MC123_20240303_OdorLaser_FreeWater',...
 };
 
 opt.iti_offset = 5; % seconds past sync pulse onset to exclude from iti period
@@ -33,6 +31,9 @@ opt.smooth_sigma = 50; % in ms (only used if opt.smooth_signals = true);
 opt.numROI = 1;
 opt.RoiName = {'VS'};
 opt.tdTom = false; % not implemented currently (tdTomato channel)
+opt.thresh_z_low = -10;
+opt.thresh_z_high = 30;
+
 
 %% Get doric files
 doric_files = dir(fullfile(paths.doric_data,'*.doric'));
@@ -74,6 +75,23 @@ for sesh_num = 1:numel(opt.sessions)
     %% extract sync pulse
     sync_idx = find(diff(dat_sync.dio1)==1)+1;
     synct = dat_sync.t(sync_idx);
+    
+    %% chop off end for some sessions when cord was unplugged before Doric stopped
+    if strcmp(session,'MC117_20231014_OdorLaser_FreeWater')
+        dat = cut_end(dat,3000); 
+    end
+    if strcmp(session,'MC104_20231016_OdorLaser_FreeWater')
+        dat = cut_end(dat,3135); 
+    end
+    if strcmp(session,'MC123_20240210_OdorLaser_FreeWater')
+        dat = cut_end(dat,3135); 
+    end
+    if strcmp(session,'MC123_20240221_OdorLaser_FreeWater')
+        dat = cut_end(dat,3135); 
+    end
+    if strcmp(session,'MC121_20240224_OdorLaser_FreeWater')
+        dat = cut_end(dat,3135); 
+    end
 
     %% process photometry data
     %Convert to DeltaF/F
@@ -84,7 +102,7 @@ for sesh_num = 1:numel(opt.sessions)
         iso_orig{roiIdx} = deltaFoverF(dat.iso{roiIdx},dat.t_iso,synct,opt.iti_offset);
         F_orig{roiIdx} = deltaFoverF(dat.sig{roiIdx},dat.t_sig,synct,opt.iti_offset);
     end
-    
+
     %% remove outliers
     % using percentiles:
 %     for roiIdx = 1:opt.numROI
@@ -94,8 +112,8 @@ for sesh_num = 1:numel(opt.sessions)
     
     % using zscore:
     for roiIdx = 1:opt.numROI
-        iso_orig{roiIdx} = remove_outliers_z(iso_orig{roiIdx},-10,10);
-        F_orig{roiIdx} = remove_outliers_z(F_orig{roiIdx},-10,10);
+        iso_orig{roiIdx} = remove_outliers_z(iso_orig{roiIdx},opt.thresh_z_low,opt.thresh_z_high);
+        F_orig{roiIdx} = remove_outliers_z(F_orig{roiIdx},opt.thresh_z_low,opt.thresh_z_high);
     end
     
     %% interpolate to same time scale
@@ -234,6 +252,8 @@ thresh_low = prctile(y,p_low);
 thresh_high = prctile(y,p_high);
 x = 1:numel(y);
 keep = y>thresh_low & y<thresh_high;
+fprintf('\t%d outliers removed (percentile<%0.2f)\n',sum(yz<thresh_low),p_low);
+fprintf('\t%d outliers removed (percentile>%0.2f)\n',sum(yz>thresh_high),p_high);
 y_new = interp1(x(keep),y(keep),x);
 
 end
@@ -241,11 +261,30 @@ end
 function y_new = remove_outliers_z(y,z_low,z_high)
 % removes outliers using percentiles p_low and p_high
 
-y = zscore(y);
+yz = zscore(y);
 thresh_low = z_low;
 thresh_high = z_high;
 x = 1:numel(y);
-keep = y>thresh_low & y<thresh_high;
+keep = yz>thresh_low & yz<thresh_high;
+fprintf('\t%d outliers removed (z-score<%0.2f)\n',sum(yz<thresh_low),z_low);
+fprintf('\t%d outliers removed (z-score>%0.2f)\n',sum(yz>thresh_high),z_high);
 y_new = interp1(x(keep),y(keep),x);
+
+end
+
+function dat = cut_end(dat,cutoff) 
+% for cutting off the end of sessions e.g. when patch cord got unplugged
+% cutoff is in seconds; everything after that is removed
+
+kp_iso = dat.t_iso<cutoff;
+kp_sig = dat.t_sig<cutoff;
+
+dat.t_iso = dat.t_iso(kp_iso);
+dat.t_sig = dat.t_sig(kp_sig);
+
+for roiIdx = 1:numel(dat.iso)
+    dat.iso{roiIdx} = dat.iso{roiIdx}(kp_iso);
+    dat.sig{roiIdx} = dat.sig{roiIdx}(kp_sig);
+end
 
 end
